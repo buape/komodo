@@ -2688,6 +2688,13 @@ export interface StackConfig {
 	 */
 	compose_cmd_wrapper_include: string[];
 	/**
+	 * Override the 1Password base reference used by the periphery-level
+	 * automatic 1Password compose wrapper. Empty stack environment variables
+	 * are resolved as `{base_ref}/{VARIABLE_NAME}`. If empty, the base ref is
+	 * `op://{periphery.onepassword.default_vault}/{stack_name}`.
+	 */
+	onepassword_env_file?: string;
+	/**
 	 * Ignore certain services declared in the compose file when checking
 	 * the stack status. For example, an init service might be exited, but the
 	 * stack should be healthy. This init service should be in `ignore_services`

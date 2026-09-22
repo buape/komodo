@@ -188,6 +188,15 @@ pub struct Env {
   /// Override `legacy_compose_cli`
   pub periphery_legacy_compose_cli: Option<bool>,
 
+  /// Override `onepassword.service_account_token`
+  pub periphery_onepassword_service_account_token: Option<String>,
+  /// Override `onepassword.service_account_token` from file
+  pub periphery_onepassword_service_account_token_file: Option<PathBuf>,
+  /// Override `onepassword.default_vault`
+  pub periphery_onepassword_default_vault: Option<String>,
+  /// Override `onepassword.cli_path`
+  pub periphery_onepassword_cli_path: Option<String>,
+
   // LOGGING
   /// Override `logging.level`
   pub periphery_logging_level: Option<LogLevel>,
@@ -397,6 +406,10 @@ pub struct PeripheryConfig {
   #[serde(default)]
   pub legacy_compose_cli: bool,
 
+  /// Configure automatic 1Password wrapping for stack compose commands.
+  #[serde(default)]
+  pub onepassword: OnePasswordConfig,
+
   /// Logging configuration
   #[serde(default)]
   pub logging: LogConfig,
@@ -434,6 +447,29 @@ pub struct PeripheryConfig {
     alias = "docker_registries"
   )]
   pub image_registries: ForgivingVec<ImageRegistry>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct OnePasswordConfig {
+  /// 1Password service account token used by `op run` for stack compose commands.
+  /// If this and `default_vault` are set, Periphery will wrap stack compose commands
+  /// with 1Password automatically unless the stack has an explicit compose wrapper.
+  #[serde(default)]
+  pub service_account_token: String,
+
+  /// Default 1Password vault for stack env files. The generated default env file
+  /// reference is `op://{default_vault}/{stack_name}`.
+  #[serde(default)]
+  pub default_vault: String,
+
+  /// Path to the `op` CLI binary.
+  /// Default: `op`
+  #[serde(default = "default_onepassword_cli_path")]
+  pub cli_path: String,
+}
+
+fn default_onepassword_cli_path() -> String {
+  String::from("op")
 }
 
 fn default_periphery_port() -> u16 {
@@ -488,6 +524,7 @@ impl Default for PeripheryConfig {
       container_stats_polling_rate:
         default_container_stats_polling_rate(),
       legacy_compose_cli: Default::default(),
+      onepassword: Default::default(),
       logging: Default::default(),
       pretty_startup_config: Default::default(),
       allowed_ips: Default::default(),
@@ -538,6 +575,13 @@ impl PeripheryConfig {
       stats_polling_rate: self.stats_polling_rate,
       container_stats_polling_rate: self.container_stats_polling_rate,
       legacy_compose_cli: self.legacy_compose_cli,
+      onepassword: OnePasswordConfig {
+        service_account_token: empty_or_redacted(
+          &self.onepassword.service_account_token,
+        ),
+        default_vault: self.onepassword.default_vault.clone(),
+        cli_path: self.onepassword.cli_path.clone(),
+      },
       logging: self.logging.clone(),
       pretty_startup_config: self.pretty_startup_config,
       allowed_ips: self.allowed_ips.clone(),

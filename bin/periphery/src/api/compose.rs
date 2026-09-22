@@ -15,7 +15,7 @@ use interpolate::Interpolator;
 use komodo_client::{
   entities::{
     FileContents, RepoExecutionResponse, all_logs_success,
-    stack::{AdditionalEnvFile, StackRemoteFileContents},
+    stack::{AdditionalEnvFile, Stack, StackRemoteFileContents},
     to_path_compatible_name,
     update::Log,
   },
@@ -300,6 +300,9 @@ impl Resolve<crate::api::Args> for ComposePull {
       .push_logs(&mut res.logs);
     replacers.extend(interpolator.secret_replacers);
 
+    let (compose_cmd_wrapper, compose_cmd_wrapper_include) =
+      compose_cmd_wrapper(&stack, &mut replacers);
+
     let (run_directory, env_file_path) = match write_stack(
       &stack,
       repo.as_ref(),
@@ -367,18 +370,16 @@ impl Resolve<crate::api::Args> for ComposePull {
     let project_name = stack.project_name(false);
 
     // Parse wrapper configuration
-    let compose_cmd_wrapper =
-      parse_multiline_command(&stack.config.compose_cmd_wrapper);
-    // If wrapper_include is empty but wrapper is set, use default ["up"] for backward compatibility
+    let compose_cmd_wrapper = parse_multiline_command(&compose_cmd_wrapper);
+    // If wrapper_include is empty but wrapper is set, use default ["up"] for backward compatibility.
     let default_include = vec![String::from("up")];
-    let wrapper_include =
-      if stack.config.compose_cmd_wrapper_include.is_empty()
-        && !compose_cmd_wrapper.is_empty()
-      {
-        &default_include
-      } else {
-        &stack.config.compose_cmd_wrapper_include
-      };
+    let wrapper_include = if compose_cmd_wrapper_include.is_empty()
+      && !compose_cmd_wrapper.is_empty()
+    {
+      &default_include
+    } else {
+      &compose_cmd_wrapper_include
+    };
 
     let pull_command = format!(
       "{docker_compose} -p {project_name} -f {file_args}{env_file_args} pull{service_args}",
@@ -460,6 +461,9 @@ impl Resolve<crate::api::Args> for ComposeUp {
       .interpolate_stack(&mut stack)?
       .push_logs(&mut res.logs);
     replacers.extend(interpolator.secret_replacers);
+
+    let (compose_cmd_wrapper, compose_cmd_wrapper_include) =
+      compose_cmd_wrapper(&stack, &mut replacers);
 
     let (run_directory, env_file_path) = match write_stack(
       &stack,
@@ -543,18 +547,16 @@ impl Resolve<crate::api::Args> for ComposeUp {
     )?;
 
     // Parse wrapper configuration once for reuse
-    let compose_cmd_wrapper =
-      parse_multiline_command(&stack.config.compose_cmd_wrapper);
-    // If wrapper_include is empty but wrapper is set, use default ["up"] for backward compatibility
+    let compose_cmd_wrapper = parse_multiline_command(&compose_cmd_wrapper);
+    // If wrapper_include is empty but wrapper is set, use default ["up"] for backward compatibility.
     let default_include = vec![String::from("up")];
-    let wrapper_include =
-      if stack.config.compose_cmd_wrapper_include.is_empty()
-        && !compose_cmd_wrapper.is_empty()
-      {
-        &default_include
-      } else {
-        &stack.config.compose_cmd_wrapper_include
-      };
+    let wrapper_include = if compose_cmd_wrapper_include.is_empty()
+      && !compose_cmd_wrapper.is_empty()
+    {
+      &default_include
+    } else {
+      &compose_cmd_wrapper_include
+    };
 
     // Uses 'docker compose config' command to extract services (including image)
     // after performing interpolation
@@ -855,6 +857,9 @@ impl Resolve<crate::api::Args> for ComposeRun {
       .push_logs(&mut Vec::new());
     replacers.extend(interpolator.secret_replacers);
 
+    let (compose_cmd_wrapper, compose_cmd_wrapper_include) =
+      compose_cmd_wrapper(&stack, &mut replacers);
+
     let mut res = ComposeRunResponse::default();
     let (run_directory, env_file_path) = match write_stack(
       &stack,
@@ -903,17 +908,17 @@ impl Resolve<crate::api::Args> for ComposeRun {
 
     // Parse wrapper configuration
     let compose_cmd_wrapper =
-      parse_multiline_command(&stack.config.compose_cmd_wrapper);
+      parse_multiline_command(&compose_cmd_wrapper);
     // If wrapper_include is empty but wrapper is set, use default ["up"] for backward compatibility
     static DEFAULT_INCLUDE: LazyLock<Vec<String>> =
       LazyLock::new(|| vec![String::from("up")]);
     let wrapper_include =
-      if stack.config.compose_cmd_wrapper_include.is_empty()
+      if compose_cmd_wrapper_include.is_empty()
         && !compose_cmd_wrapper.is_empty()
       {
         &DEFAULT_INCLUDE
       } else {
-        &stack.config.compose_cmd_wrapper_include
+        &compose_cmd_wrapper_include
       };
 
     if pull.unwrap_or_default() {
@@ -1028,6 +1033,73 @@ impl Resolve<crate::api::Args> for ComposeRun {
 
     Ok(log)
   }
+}
+
+fn compose_cmd_wrapper(
+  stack: &Stack,
+  replacers: &mut Vec<(String, String)>,
+) -> (String, Vec<String>) {
+  if !stack.config.compose_cmd_wrapper.is_empty() {
+    return (
+      stack.config.compose_cmd_wrapper.clone(),
+      stack.config.compose_cmd_wrapper_include.clone(),
+    );
+  }
+
+  let onepassword = &periphery_config().onepassword;
+  if onepassword.service_account_token.is_empty()
+    || onepassword.default_vault.is_empty()
+  {
+    return Default::default();
+  }
+
+  replacers.push((
+    onepassword.service_account_token.clone(),
+    String::from("********"),
+  ));
+
+  let op_base = if stack.config.onepassword_env_file.is_empty() {
+    format!("op://{}/{}", onepassword.default_vault, stack.name)
+  } else {
+    stack.config.onepassword_env_file.clone()
+  };
+
+  let token = escape(Cow::Borrowed(
+    onepassword.service_account_token.as_str(),
+  ));
+  let op = escape(Cow::Borrowed(onepassword.cli_path.as_str()));
+  let secret_env = stack
+    .config
+    .env_vars()
+    .unwrap_or_default()
+    .into_iter()
+    .filter(|var| var.value.is_empty())
+    .map(|var| {
+      let variable = escape(Cow::Owned(var.variable.clone()));
+      let reference = escape(Cow::Owned(format!(
+        "{op_base}/{}",
+        var.variable
+      )));
+      format!("{variable}={reference}")
+    })
+    .collect::<Vec<_>>()
+    .join(" ");
+
+  let secret_env = if secret_env.is_empty() {
+    String::new()
+  } else {
+    format!(" {secret_env}")
+  };
+
+  (
+    format!(
+      "OP_SERVICE_ACCOUNT_TOKEN={token}{secret_env} {op} run -- [[COMPOSE_COMMAND]]"
+    ),
+    ["config", "build", "pull", "up", "run"]
+      .into_iter()
+      .map(String::from)
+      .collect(),
+  )
 }
 
 fn env_file_args(
