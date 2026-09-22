@@ -13,13 +13,15 @@ use komodo_client::{
     permission::PermissionLevel,
     procedure::{Procedure, ProcedureStage},
     repo::Repo,
+    resource::ResourceQuery,
     stack::Stack,
-    update::{Log, Update},
+    update::Update,
     user::procedure_user,
   },
 };
 use mogh_resolver::Resolve;
 use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::{
@@ -27,17 +29,34 @@ use crate::{
     execute::{ExecuteArgs, ExecuteRequest},
     write::WriteArgs,
   },
+  config::core_config,
   resource::{KomodoResource, list_full_for_user_using_pattern},
   state::{all_resources_cache, db_client},
 };
 
-use super::update::{init_execution_update, update_update};
+use super::{
+  query::get_all_tags,
+  update::{init_execution_update, update_update},
+};
 
 pub async fn execute_procedure(
   procedure: &Procedure,
   update: &Mutex<Update>,
+  cancel: CancellationToken,
 ) -> anyhow::Result<()> {
   for stage in &procedure.config.stages {
+    if cancel.is_cancelled() {
+      add_line_to_update(
+        update,
+        &format!(
+          "{}: Cancelled before stage: '{}'",
+          muted("ERROR"),
+          bold(&stage.name)
+        ),
+      )
+      .await;
+      return Err(anyhow!("Procedure cancelled before completion"));
+    }
     if !stage.enabled {
       continue;
     }
@@ -94,95 +113,41 @@ async fn execute_procedure_stage(
   update: &Mutex<Update>,
 ) -> anyhow::Result<()> {
   let mut executions = Vec::with_capacity(_executions.capacity());
-  for execution in _executions {
-    match execution {
-      Execution::BatchRunAction(exec) => {
-        extend_batch_exection::<BatchRunAction>(
-          &exec.pattern,
-          &mut executions,
-        )
-        .await?;
+  // Expands the batch executions into their matching
+  // single executions, and passes through the rest.
+  macro_rules! expand_batch_executions {
+    ($($Variant:ident),* $(,)?) => {
+      for execution in _executions {
+        match execution {
+          $(
+            Execution::$Variant(exec) => {
+              extend_batch_execution::<$Variant>(
+                &exec.pattern,
+                &exec.tags,
+                &mut executions,
+              )
+              .await?;
+            }
+          )*
+          execution => executions.push(execution),
+        }
       }
-      Execution::BatchRunProcedure(exec) => {
-        extend_batch_exection::<BatchRunProcedure>(
-          &exec.pattern,
-          &mut executions,
-        )
-        .await?;
-      }
-      Execution::BatchRunBuild(exec) => {
-        extend_batch_exection::<BatchRunBuild>(
-          &exec.pattern,
-          &mut executions,
-        )
-        .await?;
-      }
-      Execution::BatchCloneRepo(exec) => {
-        extend_batch_exection::<BatchCloneRepo>(
-          &exec.pattern,
-          &mut executions,
-        )
-        .await?;
-      }
-      Execution::BatchPullRepo(exec) => {
-        extend_batch_exection::<BatchPullRepo>(
-          &exec.pattern,
-          &mut executions,
-        )
-        .await?;
-      }
-      Execution::BatchBuildRepo(exec) => {
-        extend_batch_exection::<BatchBuildRepo>(
-          &exec.pattern,
-          &mut executions,
-        )
-        .await?;
-      }
-      Execution::BatchDeploy(exec) => {
-        extend_batch_exection::<BatchDeploy>(
-          &exec.pattern,
-          &mut executions,
-        )
-        .await?;
-      }
-      Execution::BatchDestroyDeployment(exec) => {
-        extend_batch_exection::<BatchDestroyDeployment>(
-          &exec.pattern,
-          &mut executions,
-        )
-        .await?;
-      }
-      Execution::BatchDeployStack(exec) => {
-        extend_batch_exection::<BatchDeployStack>(
-          &exec.pattern,
-          &mut executions,
-        )
-        .await?;
-      }
-      Execution::BatchDeployStackIfChanged(exec) => {
-        extend_batch_exection::<BatchDeployStackIfChanged>(
-          &exec.pattern,
-          &mut executions,
-        )
-        .await?;
-      }
-      Execution::BatchPullStack(exec) => {
-        extend_batch_exection::<BatchPullStack>(
-          &exec.pattern,
-          &mut executions,
-        )
-        .await?;
-      }
-      Execution::BatchDestroyStack(exec) => {
-        extend_batch_exection::<BatchDestroyStack>(
-          &exec.pattern,
-          &mut executions,
-        )
-        .await?;
-      }
-      execution => executions.push(execution),
-    }
+    };
   }
+  expand_batch_executions!(
+    BatchRunAction,
+    BatchRunProcedure,
+    BatchRunBuild,
+    BatchCloneRepo,
+    BatchPullRepo,
+    BatchBuildRepo,
+    BatchDeploy,
+    BatchDestroyDeployment,
+    BatchDeployStack,
+    BatchDeployStackIfChanged,
+    BatchPullStack,
+    BatchDestroyStack,
+  );
   let futures = executions.into_iter().map(|execution| async move {
     let now = Instant::now();
     add_line_to_update(
@@ -274,6 +239,9 @@ async fn execute_execution(
       }
       resolve_execute!(RunProcedure, req)
     }
+    Execution::CancelProcedure(req) => {
+      resolve_execute!(CancelProcedure, req)
+    }
     // Special: write operation
     Execution::CommitSync(req) => req
       .resolve(&WriteArgs { user })
@@ -326,6 +294,9 @@ async fn execute_execution(
     }
     // Standard executions
     Execution::RunAction(req) => resolve_execute!(RunAction, req),
+    Execution::CancelAction(req) => {
+      resolve_execute!(CancelAction, req)
+    }
     Execution::RunBuild(req) => resolve_execute!(RunBuild, req),
     Execution::CancelBuild(req) => resolve_execute!(CancelBuild, req),
     Execution::Deploy(req) => resolve_execute!(Deploy, req),
@@ -485,9 +456,10 @@ async fn execute_execution(
     Ok(())
   } else {
     Err(anyhow!(
-      "{}: execution not successful. see update '{}'",
+      "{}: Execution not successful, see update: '{}/updates/{}'",
       colored("ERROR", Color::Red),
-      bold(&update.id),
+      core_config().host,
+      update.id,
     ))
   }
 }
@@ -501,14 +473,13 @@ async fn handle_resolve_result(
   match res {
     Ok(res) => Ok(res),
     Err(e) => {
-      let log =
-        Log::error("execution error", format_serror(&e.into()));
       let mut update =
         find_one_by_id(&db_client().updates, update_id)
           .await
           .context("Failed to query to db")?
           .context("no update exists with given id")?;
-      update.logs.push(log);
+      update
+        .push_error_log("Execution error", format_serror(&e.into()));
       update.finalize();
       update_update(update.clone()).await?;
       Ok(update)
@@ -529,16 +500,27 @@ async fn add_line_to_update(update: &Mutex<Update>, line: &str) {
   };
 }
 
-async fn extend_batch_exection<E: ExtendBatch>(
+async fn extend_batch_execution<E: ExtendBatch>(
   pattern: &str,
+  tags: &[String],
   executions: &mut Vec<Execution>,
 ) -> anyhow::Result<()> {
+  let all_tags = if tags.is_empty() {
+    Vec::new()
+  } else {
+    get_all_tags(None).await?
+  };
   let more = list_full_for_user_using_pattern::<E::Resource>(
     pattern,
-    Default::default(),
+    ResourceQuery {
+      tags: tags.to_vec(),
+      ..Default::default()
+    },
+    None,
+    None,
     procedure_user(),
     PermissionLevel::Read.into(),
-    &[],
+    &all_tags,
   )
   .await?
   .into_iter()
@@ -721,7 +703,9 @@ pub fn replace_procedure_stage_ids_with_names(
 
       replace_id_with_name!(
         RunProcedure => procedure, procedures;
+        CancelProcedure => procedure, procedures;
         RunAction => action, actions;
+        CancelAction => action, actions;
         RunBuild => build, builds;
         CancelBuild => build, builds;
         Deploy => deployment, deployments;
