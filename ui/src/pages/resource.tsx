@@ -1,9 +1,9 @@
 import ExportToml from "@/components/export-toml";
 import ResourceUpdates from "@/components/updates/resource";
 import {
+  useListItemQuery,
   usePermissions,
   usePushRecentlyViewed,
-  useRead,
   useResourceParamType,
   useSetTitle,
 } from "@/lib/hooks";
@@ -14,13 +14,12 @@ import {
   UsableResource,
 } from "@/resources";
 import { AddResourceTags, ResourceTags } from "@/resources/tags";
-import { DividedChildren } from "mogh_ui";
-import { Section } from "mogh_ui";
+import { DividedChildren, EntityPage } from "mogh_ui";
+import { Section, PageBreadcrumbs } from "mogh_ui";
 import { Group, Stack, Text } from "@mantine/core";
 import { Types } from "komodo_client";
 import { Link, useParams } from "react-router-dom";
-import { EntityPage } from "mogh_ui";
-import { usableResourcePath } from "@/lib/utils";
+import { resourceTypeCrumb, usableResourcePath } from "@/lib/utils";
 import ResourceDescription from "@/resources/description";
 import ResourceNotFound from "@/resources/not-found";
 import NewResource from "@/resources/new";
@@ -36,7 +35,9 @@ export default function Resource() {
 
 function ResourceInner({ type, id }: { type: UsableResource; id: string }) {
   const RC = ResourceComponents[type];
-  const resources = useRead(`List${type}s`, {}).data;
+  // Same query as `useListItem` under the hood, so they share the cache entry.
+  // Used to distinguish "still loading" from "resource doesn't exist".
+  const resources = useListItemQuery(type, id).data;
   const resource = RC.useListItem(id);
 
   const { canCreate, canExecute } = usePermissions({ type, id });
@@ -64,6 +65,17 @@ function ResourceInner({ type, id }: { type: UsableResource; id: string }) {
         (SETTINGS_RESOURCES.includes(type)
           ? "settings"
           : usableResourcePath(type))
+      }
+      breadcrumbs={
+        <PageBreadcrumbs
+          items={[
+            ...(SETTINGS_RESOURCES.includes(type)
+              ? [{ label: "Settings", to: "/settings" }]
+              : []),
+            resourceTypeCrumb(type),
+            { label: resource.name },
+          ]}
+        />
       }
       actions={
         <>

@@ -6,7 +6,6 @@ import { Router } from "@/router";
 import { setAuthUrl, ThemeProvider } from "mogh_ui";
 import { themeAdditionalColors } from "@/lib/color";
 import { Notifications } from "@mantine/notifications";
-import initMonaco from "@/monaco";
 
 import "@mantine/core/styles.css";
 // ‼️ import extra package styles after core package styles
@@ -17,10 +16,12 @@ import "./index.scss";
 // Import mogh_ui scss
 import "mogh_ui/index.scss";
 
-initMonaco();
+// Loaded dynamically to keep monaco-editor / monaco-yaml out of the entry chunk.
+// Doesn't need to be awaited - applies in background when ready.
+import("@/monaco").then(({ default: initMonaco }) => initMonaco());
 
 export const KOMODO_BASE_URL =
-  import.meta.env.VITE_KOMODO_HOST ?? location.origin;
+  import.meta.env.VITE_KOMODO_HOST || location.origin;
 export const UPDATE_WS_URL =
   KOMODO_BASE_URL.replace("http", "ws") + "/ws/update";
 const client = new QueryClient({
