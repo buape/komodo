@@ -50,6 +50,13 @@ jobs:
             type=ref,event=tag
             type=sha,prefix=sha-
 
+      - name: Read source version
+        id: version
+        run: |
+          version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' client/core/rs/Cargo.toml | head -n 1)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -59,5 +66,7 @@ jobs:
           push: true
           pull: true
           no-cache: true
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
