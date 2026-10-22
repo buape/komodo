@@ -24,7 +24,7 @@ RUN cargo build -p komodo_core --release && \
   cargo strip
 
 # Build UI
-FROM node:22.12-alpine AS ui-builder
+FROM node:22.23.4-alpine AS ui-builder
 WORKDIR /builder
 COPY ./ui ./ui
 COPY ./client/core/ts ./client

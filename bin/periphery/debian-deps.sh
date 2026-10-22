@@ -1,9 +1,13 @@
 #!/bin/bash
+set -eu
 
 ## Periphery deps installer
 
 apt-get update
 apt-get install -y git curl wget ca-certificates
+# Fail the build rather than ship a pre-eMudhra-remediation trust store.
+dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge '20250419+deb13u1'
+update-ca-certificates
 
 install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc

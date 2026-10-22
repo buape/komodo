@@ -1,4 +1,4 @@
-name: Publish Core Image
+name: Publish Runtime Images
 
 on:
   workflow_dispatch:
@@ -11,12 +11,15 @@ on:
     tags:
       - "v*"
 
-env:
-  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/komodo-core
-
 jobs:
   publish:
-    name: Build and Push Core Image
+    name: Build and Push ${{ matrix.component }} Image
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [core, periphery]
+    env:
+      IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/komodo-${{ matrix.component }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -51,8 +54,10 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: bin/core/aio.Dockerfile
+          file: bin/${{ matrix.component }}/aio.Dockerfile
           platforms: linux/amd64
           push: true
+          pull: true
+          no-cache: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

@@ -7,7 +7,7 @@ ARG BINARIES_IMAGE=ghcr.io/moghtech/komodo-binaries:2
 FROM ${BINARIES_IMAGE} AS binaries
 
 # Build UI
-FROM node:22.12-alpine AS ui-builder
+FROM node:22.23.4-alpine AS ui-builder
 WORKDIR /builder
 COPY ./ui ./ui
 COPY ./client/core/ts ./client
