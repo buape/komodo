@@ -86,6 +86,27 @@ mod tests {
   }
 
   #[test]
+  fn survives_the_compose_wrapper_parser() {
+    use std::borrow::Cow;
+
+    let script = shell_escape::unix::escape(Cow::Owned(
+      PRIVATE_KEY_SCRIPT.replace('\n', " "),
+    ));
+    let wrapper = format!(
+      "bash -c {script} -- bash -c '[[ \"$TEST_PRIVATE_KEY\" == \"$EXPECTED\" ]]'"
+    );
+    let parsed =
+      komodo_client::parsers::parse_multiline_command(wrapper);
+    let result = Command::new("sh")
+      .args(["-c", &parsed])
+      .env("TEST_PRIVATE_KEY", "first\\nsecond")
+      .env("EXPECTED", "first\nsecond")
+      .status()
+      .expect("run parsed wrapper");
+    assert!(result.success());
+  }
+
+  #[test]
   fn preserves_child_exit_status() {
     let result = Command::new("bash")
       .args([
