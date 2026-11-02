@@ -24,6 +24,7 @@ mod container;
 mod docker;
 mod git;
 mod keys;
+mod onepassword;
 mod poll;
 mod swarm;
 
