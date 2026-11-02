@@ -1089,8 +1089,8 @@ fn compose_cmd_wrapper(
     format!(" {secret_env}")
   };
 
-  let normalize = escape(Cow::Borrowed(
-    crate::api::onepassword::PRIVATE_KEY_SCRIPT,
+  let normalize = escape(Cow::Owned(
+    crate::api::onepassword::PRIVATE_KEY_SCRIPT.replace('\n', " "),
   ));
 
   (
