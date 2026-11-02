@@ -3,7 +3,9 @@ use std::{path::PathBuf, sync::OnceLock};
 use clap::Parser;
 use colored::Colorize;
 use komodo_client::entities::{
-  config::periphery::{CliArgs, Env, PeripheryConfig},
+  config::periphery::{
+    CliArgs, Env, OnePasswordConfig, PeripheryConfig,
+  },
   logger::{LogConfig, LogLevel},
 };
 use mogh_config::ConfigLoader;
@@ -126,6 +128,19 @@ pub fn periphery_config() -> &'static PeripheryConfig {
       legacy_compose_cli: env
         .periphery_legacy_compose_cli
         .unwrap_or(config.legacy_compose_cli),
+      onepassword: OnePasswordConfig {
+        service_account_token: maybe_read_item_from_file(
+          env.periphery_onepassword_service_account_token_file,
+          env.periphery_onepassword_service_account_token,
+        )
+        .unwrap_or(config.onepassword.service_account_token),
+        default_vault: env
+          .periphery_onepassword_default_vault
+          .unwrap_or(config.onepassword.default_vault),
+        cli_path: env
+          .periphery_onepassword_cli_path
+          .unwrap_or(config.onepassword.cli_path),
+      },
       logging: LogConfig {
         level: args
           .log_level

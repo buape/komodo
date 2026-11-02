@@ -637,6 +637,14 @@ pub struct StackConfig {
   #[builder(default = "default_wrapper_include()")]
   pub compose_cmd_wrapper_include: Vec<String>,
 
+  /// Override the 1Password base reference used by the periphery-level
+  /// automatic 1Password compose wrapper. Empty stack environment variables
+  /// are resolved as `{base_ref}/{VARIABLE_NAME}`. If empty, the base ref is
+  /// `op://{periphery.onepassword.default_vault}/{stack_name}`.
+  #[serde(default)]
+  #[builder(default)]
+  pub onepassword_env_file: String,
+
   /// Ignore certain services declared in the compose file when checking
   /// the stack status. For example, an init service might be exited, but the
   /// stack should be healthy. This init service should be in `ignore_services`
@@ -749,6 +757,7 @@ impl Default for StackConfig {
       build_extra_args: Default::default(),
       compose_cmd_wrapper: Default::default(),
       compose_cmd_wrapper_include: default_wrapper_include(),
+      onepassword_env_file: Default::default(),
       skip_secret_interp: Default::default(),
       linked_repo: Default::default(),
       git_provider: default_git_provider(),

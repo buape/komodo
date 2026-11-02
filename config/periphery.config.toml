@@ -93,6 +93,18 @@ container_stats_polling_rate = "30-sec"
 ## Default: false
 legacy_compose_cli = false
 
+## Optional. Automatically wrap stack compose commands with 1Password.
+## If service_account_token and default_vault are set, stack compose commands
+## without an explicit compose_cmd_wrapper will use op run automatically.
+## Empty stack environment variables are resolved from 1Password as:
+## op://${default_vault}/${stack_name}/${VARIABLE_NAME}
+## Override the base reference per stack with stack.config.onepassword_env_file.
+## Env: PERIPHERY_ONEPASSWORD_SERVICE_ACCOUNT_TOKEN or PERIPHERY_ONEPASSWORD_SERVICE_ACCOUNT_TOKEN_FILE
+# [onepassword]
+# service_account_token = ""
+# default_vault = "Infra Envs"
+# cli_path = "/usr/bin/op"
+
 ## Optional. Only include mounts at specific paths in the disk report.
 ## Example: include_disk_mounts = ["/mnt/include/1", "/mnt/include/2"]
 ## Env: PERIPHERY_INCLUDE_DISK_MOUNTS

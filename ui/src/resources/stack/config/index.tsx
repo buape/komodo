@@ -552,6 +552,21 @@ export default function StackConfig({
             </ConfigItem>
           );
         },
+        onepassword_env_file: (value, set) => (
+          <ConfigItem
+            label="1Password Base Ref"
+            description="Override the periphery-level 1Password base reference for this stack. Empty stack environment variables resolve as {base_ref}/{VARIABLE_NAME}. Leave empty to use op://{default_vault}/{stack_name}."
+          >
+            <TextInput
+              value={value ?? ""}
+              placeholder="op://Infra Envs/custom-stack"
+              onChange={(e) =>
+                set({ onepassword_env_file: e.target.value })
+              }
+              disabled={disabled}
+            />
+          </ConfigItem>
+        ),
       },
     },
     {
