@@ -370,7 +370,8 @@ impl Resolve<crate::api::Args> for ComposePull {
     let project_name = stack.project_name(false);
 
     // Parse wrapper configuration
-    let compose_cmd_wrapper = parse_multiline_command(&compose_cmd_wrapper);
+    let compose_cmd_wrapper =
+      parse_multiline_command(&compose_cmd_wrapper);
     // If wrapper_include is empty but wrapper is set, use default ["up"] for backward compatibility.
     let default_include = vec![String::from("up")];
     let wrapper_include = if compose_cmd_wrapper_include.is_empty()
@@ -547,7 +548,8 @@ impl Resolve<crate::api::Args> for ComposeUp {
     )?;
 
     // Parse wrapper configuration once for reuse
-    let compose_cmd_wrapper = parse_multiline_command(&compose_cmd_wrapper);
+    let compose_cmd_wrapper =
+      parse_multiline_command(&compose_cmd_wrapper);
     // If wrapper_include is empty but wrapper is set, use default ["up"] for backward compatibility.
     let default_include = vec![String::from("up")];
     let wrapper_include = if compose_cmd_wrapper_include.is_empty()
@@ -912,14 +914,13 @@ impl Resolve<crate::api::Args> for ComposeRun {
     // If wrapper_include is empty but wrapper is set, use default ["up"] for backward compatibility
     static DEFAULT_INCLUDE: LazyLock<Vec<String>> =
       LazyLock::new(|| vec![String::from("up")]);
-    let wrapper_include =
-      if compose_cmd_wrapper_include.is_empty()
-        && !compose_cmd_wrapper.is_empty()
-      {
-        &DEFAULT_INCLUDE
-      } else {
-        &compose_cmd_wrapper_include
-      };
+    let wrapper_include = if compose_cmd_wrapper_include.is_empty()
+      && !compose_cmd_wrapper.is_empty()
+    {
+      &DEFAULT_INCLUDE
+    } else {
+      &compose_cmd_wrapper_include
+    };
 
     if pull.unwrap_or_default() {
       let pull_command = format!(
@@ -1064,9 +1065,8 @@ fn compose_cmd_wrapper(
     stack.config.onepassword_env_file.clone()
   };
 
-  let token = escape(Cow::Borrowed(
-    onepassword.service_account_token.as_str(),
-  ));
+  let token =
+    escape(Cow::Borrowed(onepassword.service_account_token.as_str()));
   let op = escape(Cow::Borrowed(onepassword.cli_path.as_str()));
   let secret_env = stack
     .config
@@ -1076,10 +1076,8 @@ fn compose_cmd_wrapper(
     .filter(|var| var.value.is_empty())
     .map(|var| {
       let variable = escape(Cow::Owned(var.variable.clone()));
-      let reference = escape(Cow::Owned(format!(
-        "{op_base}/{}",
-        var.variable
-      )));
+      let reference =
+        escape(Cow::Owned(format!("{op_base}/{}", var.variable)));
       format!("{variable}={reference}")
     })
     .collect::<Vec<_>>()
@@ -1091,9 +1089,13 @@ fn compose_cmd_wrapper(
     format!(" {secret_env}")
   };
 
+  let normalize = escape(Cow::Borrowed(
+    crate::api::onepassword::PRIVATE_KEY_SCRIPT,
+  ));
+
   (
     format!(
-      "OP_SERVICE_ACCOUNT_TOKEN={token}{secret_env} {op} run -- [[COMPOSE_COMMAND]]"
+      "OP_SERVICE_ACCOUNT_TOKEN={token}{secret_env} {op} run -- bash -c {normalize} -- [[COMPOSE_COMMAND]]"
     ),
     ["config", "build", "pull", "up", "run"]
       .into_iter()

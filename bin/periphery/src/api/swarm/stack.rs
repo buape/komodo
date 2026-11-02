@@ -12,8 +12,8 @@ use komodo_client::{
     all_logs_success,
     docker::stack::SwarmStack,
     stack::{
-      AdditionalEnvFile, ComposeFile, ComposeService,
-      Stack, StackServiceNames,
+      AdditionalEnvFile, ComposeFile, ComposeService, Stack,
+      StackServiceNames,
     },
     update::Log,
   },
@@ -89,9 +89,8 @@ fn compose_cmd_wrapper(
     stack.config.onepassword_env_file.clone()
   };
 
-  let token = escape(Cow::Borrowed(
-    onepassword.service_account_token.as_str(),
-  ));
+  let token =
+    escape(Cow::Borrowed(onepassword.service_account_token.as_str()));
   let op = escape(Cow::Borrowed(onepassword.cli_path.as_str()));
   let secret_env = stack
     .config
@@ -101,10 +100,8 @@ fn compose_cmd_wrapper(
     .filter(|var| var.value.is_empty())
     .map(|var| {
       let variable = escape(Cow::Owned(var.variable.clone()));
-      let reference = escape(Cow::Owned(format!(
-        "{op_base}/{}",
-        var.variable
-      )));
+      let reference =
+        escape(Cow::Owned(format!("{op_base}/{}", var.variable)));
       format!("{variable}={reference}")
     })
     .collect::<Vec<_>>()
@@ -116,9 +113,13 @@ fn compose_cmd_wrapper(
     format!(" {secret_env}")
   };
 
+  let normalize = escape(Cow::Borrowed(
+    crate::api::onepassword::PRIVATE_KEY_SCRIPT,
+  ));
+
   (
     format!(
-      "OP_SERVICE_ACCOUNT_TOKEN={token}{secret_env} {op} run -- [[COMPOSE_COMMAND]]"
+      "OP_SERVICE_ACCOUNT_TOKEN={token}{secret_env} {op} run -- bash -c {normalize} -- [[COMPOSE_COMMAND]]"
     ),
     ["config", "deploy"].into_iter().map(String::from).collect(),
   )
@@ -278,7 +279,8 @@ impl Resolve<crate::api::Args> for DeploySwarmStack {
     let project_name = stack.project_name(true);
 
     // Parse wrapper configuration once for reuse
-    let compose_cmd_wrapper = parse_multiline_command(&compose_cmd_wrapper);
+    let compose_cmd_wrapper =
+      parse_multiline_command(&compose_cmd_wrapper);
     // If wrapper_include is empty but wrapper is set, use default ["deploy"] for backward compatibility.
     let default_include = vec![String::from("deploy")];
     let wrapper_include = if compose_cmd_wrapper_include.is_empty()
